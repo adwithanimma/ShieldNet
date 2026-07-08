@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ShieldNet — Sign In</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+
+:root{
+    --bg:            #0a0b0d;
+    --panel:         #131519;
+    --panel-raised:  #1a1d22;
+    --border:        #24272d;
+    --border-bright: #34383f;
+    --text:          #e9e7e0;
+    --muted:         #83868c;
+    --amber:         #ffb454;
+    --danger:        #ff5c5c;
+    --danger-dim:    #4a2323;
+}
+
+*{ box-sizing:border-box; }
+
+body{
+    background:radial-gradient(ellipse at top, #101216 0%, var(--bg) 55%);
+    color:var(--text);
+    font-family:'IBM Plex Mono', monospace;
+    margin:0;
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:20px;
+}
+
+.login-card{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:36px 34px;
+    width:100%;
+    max-width:380px;
+}
+
+.brand{
+    display:flex;
+    align-items:center;
+    gap:14px;
+    margin-bottom:28px;
+}
+
+.brand-mark{
+    width:40px;
+    height:40px;
+    border-radius:8px;
+    background:linear-gradient(160deg, var(--panel-raised), var(--panel));
+    border:1px solid var(--border-bright);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+}
+
+.brand-text h1{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:20px;
+    font-weight:700;
+    margin:0;
+}
+
+.brand-text p{
+    margin:2px 0 0;
+    font-size:11px;
+    color:var(--muted);
+    letter-spacing:1.5px;
+    text-transform:uppercase;
+}
+
+label{
+    display:block;
+    font-size:11px;
+    letter-spacing:1px;
+    text-transform:uppercase;
+    color:var(--muted);
+    margin-bottom:6px;
+    margin-top:16px;
+}
+
+input{
+    width:100%;
+    background:var(--panel-raised);
+    color:var(--text);
+    border:1px solid var(--border-bright);
+    border-radius:7px;
+    padding:11px 13px;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:14px;
+}
+
+input:focus{
+    outline:2px solid var(--amber);
+    outline-offset:1px;
+}
+
+button{
+    width:100%;
+    margin-top:24px;
+    background:var(--amber);
+    color:#1a1206;
+    font-weight:600;
+    border:none;
+    border-radius:7px;
+    padding:12px;
+    font-family:'Space Grotesk', sans-serif;
+    font-size:14px;
+    cursor:pointer;
+    letter-spacing:0.5px;
+}
+
+button:hover{ opacity:0.88; }
+
+.error-box{
+    margin-top:18px;
+    background:var(--danger-dim);
+    border:1px solid var(--danger);
+    color:var(--danger);
+    padding:10px 14px;
+    border-radius:7px;
+    font-size:12.5px;
+}
+
+</style>
+</head>
+<body>
+
+<div class="login-card">
+
+<div class="brand">
+    <div class="brand-mark">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2">
+            <path d="M12 2 L20 6 V12 C20 17 16.5 20.5 12 22 C7.5 20.5 4 17 4 12 V6 Z"/>
+        </svg>
+    </div>
+    <div class="brand-text">
+        <h1>SHIELDNET</h1>
+        <p>Network Defense Console</p>
+    </div>
+</div>
+
+{% if error %}
+<div class="error-box">{{ error }}</div>
+{% endif %}
+
+<form method="POST">
+    <label for="username">Username</label>
+    <input type="text" id="username" name="username" autocomplete="username" required autofocus>
+
+    <label for="password">Password</label>
+    <input type="password" id="password" name="password" autocomplete="current-password" required>
+
+    <button type="submit">Sign In</button>
+</form>
+
+</div>
+
+</body>
+</html>
