@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SecureCorp Portal — Welcome</title>
+<style>
+body{
+    margin:0;
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:linear-gradient(135deg, #4f46e5, #7c3aed);
+    font-family:'Segoe UI', sans-serif;
+}
+.card{
+    background:white;
+    border-radius:16px;
+    padding:44px 40px;
+    width:100%;
+    max-width:420px;
+    box-shadow:0 20px 60px rgba(0,0,0,0.25);
+    text-align:center;
+}
+.icon{ font-size:44px; margin-bottom:10px; }
+h1{ color:#111827; font-size:22px; margin:0 0 8px; }
+p{ color:#6b7280; font-size:14px; line-height:1.6; }
+.badge{
+    display:inline-block;
+    margin-top:20px;
+    padding:8px 16px;
+    background:#eef2ff;
+    color:#4f46e5;
+    border-radius:20px;
+    font-size:12.5px;
+    font-weight:600;
+}
+</style>
+</head>
+<body>
+
+<div class="card">
+    <div class="icon">✅</div>
+    <h1>Welcome, {{ username }}!</h1>
+    <p>You've successfully signed in to the SecureCorp demo portal. This request was checked by ShieldNet's detection engine before reaching this page.</p>
+    <div class="badge">🛡️ Protected by ShieldNet</div>
+</div>
+
+</body>
+</html>

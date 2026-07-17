@@ -1,7 +1,8 @@
 import psutil
 import smtplib
+import requests
 from email.mime.text import MIMEText
-from flask import Flask, request, jsonify, render_template, session, redirect, url_for
+from flask import Flask, request, jsonify, render_template, session, redirect, url_for, Response
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
 from collections import defaultdict
@@ -83,6 +84,11 @@ BLOCK_TIME = 30
 SPARKLINE_MAX_POINTS = 30
 BASELINE_MAX_SAMPLES = 50                       # how many past windows to remember per IP
 Z_SCORE_THRESHOLD = 3.0                         # how many std devs above baseline counts as an attack
+
+# The real website ShieldNet is protecting. Requests to /protected/... are
+# checked against the detection engine BEFORE being forwarded here - if an
+# IP is flagged, the demo site never sees the request at all.
+DEMO_SITE_URL = os.environ.get("DEMO_SITE_URL", "http://127.0.0.1:6060")
 
 # Create logs folder
 os.makedirs("logs", exist_ok=True)
@@ -229,43 +235,38 @@ def dashboard():
     return render_template("index.html", username=session.get("username"))
 
 
-# ==========================
-# Traffic Monitoring Route
-# ==========================
-@app.route('/track')
-def track():
-    ip = get_client_ip()
+def evaluate_request(ip):
+    """
+    Runs the full detection pipeline for a single request from `ip`:
+    whitelist check, block check, sliding-window counting, and combined
+    fixed+rolling-baseline detection. Used by both /track (the original
+    synthetic traffic endpoint) and the /protected proxy (real requests
+    being forwarded to the demo site).
+
+    Returns a tuple: (allowed: bool, status_message: str)
+    """
     current_time = time.time()
 
-    # Whitelisted IPs skip all detection/blocking entirely
     if ip in whitelisted_ips:
         request_log[ip].append(current_time)
         request_log[ip] = [t for t in request_log[ip] if current_time - t < 10]
-        return "ShieldNet Server Running (whitelisted)"
+        return True, "whitelisted"
 
-    # Check if IP is blocked
     if ip in blocked_ips:
         if current_time < blocked_ips[ip]:
-            return f"🚫 IP {ip} is temporarily blocked!"
+            return False, "already_blocked"
         else:
             del blocked_ips[ip]
 
-    # Store timestamp
     request_log[ip].append(current_time)
-
-    # Keep only requests from last 10 seconds
     request_log[ip] = [t for t in request_log[ip] if current_time - t < 10]
 
     request_count = len(request_log[ip])
     record_ip_sample(ip, request_count)
 
-    print(f"IP: {ip} | Requests: {request_count}")
-
-    # Save logs
     with open("logs/traffic.log", "a") as file:
         file.write(f"IP: {ip}, Requests: {request_count}\n")
 
-    # DDoS Detection - combines fixed threshold + rolling baseline (z-score)
     fixed_flag, zscore_flag, combined_flag = detect(ip, request_count)
 
     if combined_flag and ip not in blocked_ips:
@@ -285,10 +286,90 @@ def track():
         send_alert(ip)
 
         blocked_ips[ip] = current_time + BLOCK_TIME
+        return False, "newly_blocked"
 
+    return True, "ok"
+
+
+# ==========================
+# Traffic Monitoring Route
+# ==========================
+@app.route('/track')
+def track():
+    ip = get_client_ip()
+    allowed, status = evaluate_request(ip)
+
+    if not allowed:
+        if status == "already_blocked":
+            return f"🚫 IP {ip} is temporarily blocked!"
         return f"🚫 DDoS Detected. IP {ip} blocked."
 
+    if status == "whitelisted":
+        return "ShieldNet Server Running (whitelisted)"
+
     return "ShieldNet Server Running"
+
+
+# ==========================
+# Protected Site Reverse Proxy
+# ==========================
+# Every request here is evaluated by ShieldNet's detection engine BEFORE
+# being forwarded to the real site (DEMO_SITE_URL). If the requesting IP
+# is blocked or newly flagged, the demo site never receives the request -
+# ShieldNet returns a block page directly instead.
+
+HOP_BY_HOP_HEADERS = {
+    "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+    "te", "trailers", "transfer-encoding", "upgrade", "content-length", "content-encoding"
+}
+
+
+@app.route('/protected/', defaults={'path': ''}, methods=["GET", "POST"])
+@app.route('/protected/<path:path>', methods=["GET", "POST"])
+def protected_proxy(path):
+    ip = get_client_ip()
+    allowed, status = evaluate_request(ip)
+
+    if not allowed:
+        message = (
+            f"🚫 Your IP ({ip}) is temporarily blocked due to suspicious traffic."
+            if status == "already_blocked" else
+            f"🚫 DDoS activity detected from your IP ({ip}). Access blocked by ShieldNet."
+        )
+        return Response(
+            f"<html><body style='font-family:sans-serif; text-align:center; padding:60px;'>"
+            f"<h1>403 — Blocked by ShieldNet</h1><p>{message}</p></body></html>",
+            status=403,
+            mimetype="text/html"
+        )
+
+    # Request passed detection - forward it to the real (demo) site
+    target_url = f"{DEMO_SITE_URL}/{path}"
+
+    try:
+        upstream = requests.request(
+            method=request.method,
+            url=target_url,
+            headers={k: v for k, v in request.headers if k.lower() != "host"},
+            data=request.get_data(),
+            params=request.args,
+            allow_redirects=False,
+            timeout=5
+        )
+    except requests.exceptions.RequestException:
+        return Response(
+            "<h1>502 — Demo site unreachable</h1>"
+            "<p>ShieldNet allowed this request through, but the protected site did not respond. "
+            f"Make sure it's running at {DEMO_SITE_URL}.</p>",
+            status=502,
+            mimetype="text/html"
+        )
+
+    response_headers = [
+        (k, v) for k, v in upstream.headers.items()
+        if k.lower() not in HOP_BY_HOP_HEADERS
+    ]
+    return Response(upstream.content, status=upstream.status_code, headers=response_headers)
 
 
 # ==========================
@@ -423,4 +504,4 @@ def reset():
 # Run Flask
 # ==========================
 if __name__ == '__main__':
-    app.run(debug=False)
+    app.run(host="0.0.0.0", port=5000, debug=False)
