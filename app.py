@@ -78,7 +78,7 @@ attack_history = []
 whitelisted_ips = set()
 
 # Settings
-REQUEST_LIMIT = 20                              # fixed-threshold method
+REQUEST_LIMIT = int(os.environ.get("REQUEST_LIMIT", "20"))  # fixed-threshold method
 SUSPICIOUS_LIMIT = int(REQUEST_LIMIT * 0.6)     # 60% of block threshold
 BLOCK_TIME = 30
 
