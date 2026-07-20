@@ -87,7 +87,8 @@ Z_SCORE_THRESHOLD = 3.0                         # how many std devs above baseli
 
 # The real website ShieldNet is protecting. Requests to /protected/... are
 # checked against the detection engine BEFORE being forwarded here - if an
-# IP is flagged, the demo site never sees the request at all.
+# IP is flagged, the demo site never sees the request at all. This points
+# to a separately deployed/running service (see demo_site/app.py).
 DEMO_SITE_URL = os.environ.get("DEMO_SITE_URL", "http://127.0.0.1:6060")
 
 # Create logs folder
@@ -346,11 +347,19 @@ def protected_proxy(path):
     # Request passed detection - forward it to the real (demo) site
     target_url = f"{DEMO_SITE_URL}/{path}"
 
+    # Forward the browser's headers, but override Accept-Encoding: browsers
+    # send "br" (Brotli) which Python's requests library can silently fail
+    # to auto-decompress unless the optional brotli package is installed -
+    # that produces garbled/binary-looking text in the response. Restricting
+    # to gzip/deflate (which requests always handles) avoids this entirely.
+    forwarded_headers = {k: v for k, v in request.headers if k.lower() != "host"}
+    forwarded_headers["Accept-Encoding"] = "gzip, deflate"
+
     try:
         upstream = requests.request(
             method=request.method,
             url=target_url,
-            headers={k: v for k, v in request.headers if k.lower() != "host"},
+            headers=forwarded_headers,
             data=request.get_data(),
             params=request.args,
             allow_redirects=False,
@@ -503,11 +512,5 @@ def reset():
 # ==========================
 # Run Flask
 # ==========================
-import os
-
-if __name__ == "__main__":
-    app.run(
-        host="0.0.0.0",
-        port=int(os.environ.get("PORT", 5000)),
-        debug=False
-    )
+if __name__ == '__main__':
+    app.run(host="0.0.0.0", port=5000, debug=False)
