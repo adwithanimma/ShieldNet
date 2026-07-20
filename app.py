@@ -81,6 +81,14 @@ whitelisted_ips = set()
 REQUEST_LIMIT = 20                              # fixed-threshold method
 SUSPICIOUS_LIMIT = int(REQUEST_LIMIT * 0.6)     # 60% of block threshold
 BLOCK_TIME = 30
+
+# How many seconds of request history count toward the sliding-window
+# request count. Over a real network (vs. localhost), request latency
+# spreads an attacker's requests out over more wall-clock time, so a
+# short window can under-count and miss attacks that would trigger
+# locally. Widen this via the env var for higher-latency deployments
+# without changing code.
+DETECTION_WINDOW_SECONDS = int(os.environ.get("DETECTION_WINDOW_SECONDS", "10"))
 SPARKLINE_MAX_POINTS = 30
 BASELINE_MAX_SAMPLES = 50                       # how many past windows to remember per IP
 Z_SCORE_THRESHOLD = 3.0                         # how many std devs above baseline counts as an attack
@@ -250,7 +258,7 @@ def evaluate_request(ip):
 
     if ip in whitelisted_ips:
         request_log[ip].append(current_time)
-        request_log[ip] = [t for t in request_log[ip] if current_time - t < 10]
+        request_log[ip] = [t for t in request_log[ip] if current_time - t < DETECTION_WINDOW_SECONDS]
         return True, "whitelisted"
 
     if ip in blocked_ips:
@@ -260,7 +268,7 @@ def evaluate_request(ip):
             del blocked_ips[ip]
 
     request_log[ip].append(current_time)
-    request_log[ip] = [t for t in request_log[ip] if current_time - t < 10]
+    request_log[ip] = [t for t in request_log[ip] if current_time - t < DETECTION_WINDOW_SECONDS]
 
     request_count = len(request_log[ip])
     record_ip_sample(ip, request_count)
@@ -412,6 +420,7 @@ def stats():
         "severity": severity,
         "suspicious_limit": SUSPICIOUS_LIMIT,
         "request_limit": REQUEST_LIMIT,
+        "detection_window_seconds": DETECTION_WINDOW_SECONDS,
         "latest_alert": attack_history[-1] if attack_history else "No Alerts",
         "top_attacker_sparkline": ip_history.get(top_attacker, []) if top_attacker != "None" else [],
         "packets_sent": network.packets_sent,
