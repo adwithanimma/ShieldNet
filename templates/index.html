@@ -27,13 +27,34 @@
     --safe:          #52d17a;
     --safe-dim:      #1f4a2c;
     --grid-line:     #1c1f24;
+    --bg-radial-inner: #101216;
 }
 
-*{ box-sizing:border-box; }
+[data-theme="light"]{
+    --bg:            #f4f2ee;
+    --panel:         #ffffff;
+    --panel-raised:  #f0eee9;
+    --border:        #ddd8ce;
+    --border-bright: #c7c0b2;
+    --text:          #1d1b16;
+    --muted:         #6b675e;
+    --amber:         #b5691a;
+    --amber-dim:     #f2dcb8;
+    --danger:        #c23434;
+    --danger-dim:    #fbdcdc;
+    --warn:          #a3780a;
+    --warn-dim:      #f7ecc9;
+    --safe:          #1f8a4c;
+    --safe-dim:      #d7f0e0;
+    --grid-line:     #e4e0d6;
+    --bg-radial-inner: #ffffff;
+}
+
+*{ box-sizing:border-box; transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease; }
 
 body{
     background:
-        radial-gradient(ellipse at top, #101216 0%, var(--bg) 55%);
+        radial-gradient(ellipse at top, var(--bg-radial-inner) 0%, var(--bg) 55%);
     color:var(--text);
     font-family:'IBM Plex Mono', monospace;
     margin:0;
@@ -410,6 +431,10 @@ pre#alert_box{
             <span class="status-dot" style="background:var(--safe);"></span>
             <span id="status_text">SYSTEM SECURE</span>
         </div>
+        <button id="theme_toggle" type="button" class="ghost" style="font-size:11px; padding:8px 14px; display:flex; align-items:center; gap:6px;" onclick="toggleTheme()">
+            <span id="theme_icon">🌙</span>
+            <span id="theme_label">DARK</span>
+        </button>
         <form action="/logout" method="POST" style="margin:0;">
             <button type="submit" class="ghost" style="font-size:11px; padding:8px 14px;">LOG OUT</button>
         </form>
@@ -563,6 +588,44 @@ Attack Timeline
 </div>
 
 <script>
+// ---------- Theme (dark/light) ----------
+const THEME_COLORS = {
+    dark:  { text: '#83868c', grid: '#1c1f24' },
+    light: { text: '#6b675e', grid: '#e4e0d6' }
+};
+
+function applyTheme(theme){
+    document.documentElement.setAttribute('data-theme', theme === 'light' ? 'light' : 'dark');
+    document.getElementById('theme_icon').textContent = theme === 'light' ? '☀️' : '🌙';
+    document.getElementById('theme_label').textContent = theme === 'light' ? 'LIGHT' : 'DARK';
+
+    const colors = THEME_COLORS[theme] || THEME_COLORS.dark;
+    Chart.defaults.color = colors.text;
+    gridColor = colors.grid;
+
+    if(typeof trafficChart !== 'undefined'){
+        trafficChart.options.scales.x.grid.color = colors.grid;
+        trafficChart.options.scales.y.grid.color = colors.grid;
+        trafficChart.update();
+    }
+    if(typeof sparklineChart !== 'undefined'){
+        sparklineChart.options.scales.y.grid.color = colors.grid;
+        sparklineChart.update();
+    }
+}
+
+function toggleTheme(){
+    const current = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+    const next = current === 'light' ? 'dark' : 'light';
+    localStorage.setItem('shieldnet_theme', next);
+    applyTheme(next);
+}
+
+const savedTheme = localStorage.getItem('shieldnet_theme') || 'dark';
+document.documentElement.setAttribute('data-theme', savedTheme);
+document.getElementById('theme_icon').textContent = savedTheme === 'light' ? '☀️' : '🌙';
+document.getElementById('theme_label').textContent = savedTheme === 'light' ? 'LIGHT' : 'DARK';
+
 // Ensure the server returns JSON (not an HTML login page) when the
 // session has expired, and redirect to /login if that happens.
 const _originalFetch = window.fetch;
@@ -577,7 +640,7 @@ window.fetch = function(url, options = {}){
     });
 };
 
-Chart.defaults.color = '#83868c';
+Chart.defaults.color = THEME_COLORS[savedTheme].text;
 Chart.defaults.font.family = "'IBM Plex Mono', monospace";
 Chart.defaults.font.size = 11;
 
@@ -588,7 +651,7 @@ function formatBytes(bytes){
     return (bytes/1073741824).toFixed(2) + " GB";
 }
 
-const gridColor = '#1c1f24';
+let gridColor = THEME_COLORS[savedTheme].grid;
 const labels = [];
 const values = [];
 let maxPoints = 30;
