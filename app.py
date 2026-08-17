@@ -1,6 +1,7 @@
 import psutil
 import smtplib
 import requests
+import threading
 from email.mime.text import MIMEText
 from flask import Flask, request, jsonify, render_template, session, redirect, url_for, Response
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -102,8 +103,21 @@ DEMO_SITE_URL = os.environ.get("DEMO_SITE_URL", "http://127.0.0.1:6060")
 # Create logs folder
 os.makedirs("logs", exist_ok=True)
 
+# How long to wait for the SMTP connection/handshake before giving up.
+# Without this, a blocked or slow outbound SMTP connection (common on some
+# hosting platforms that restrict port 587) can hang indefinitely. Since
+# gunicorn kills workers that don't respond within its own timeout, an
+# email call hanging past that limit crashes the whole worker process -
+# wiping all in-memory detection state (blocked IPs, attack history) at
+# the exact moment an attack was just recorded. A short timeout here turns
+# that into a normal, catchable error instead of a worker crash.
+SMTP_TIMEOUT_SECONDS = int(os.environ.get("SMTP_TIMEOUT_SECONDS", "8"))
 
-def send_alert(ip):
+
+def _send_alert_email(ip):
+    """The actual blocking SMTP work, run in a background thread by
+    send_alert() so it can never stall or crash the request-handling
+    process, even if it's slower than expected."""
     sender_email = os.environ.get("SHIELDNET_EMAIL")
     app_password = os.environ.get("SHIELDNET_APP_PASSWORD")
     receiver_email = os.environ.get("SHIELDNET_RECEIVER_EMAIL", sender_email)
@@ -131,7 +145,7 @@ IP temporarily blocked by ShieldNet.
     msg["To"] = receiver_email
 
     try:
-        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server = smtplib.SMTP("smtp.gmail.com", 587, timeout=SMTP_TIMEOUT_SECONDS)
         server.starttls()
         server.login(sender_email, app_password)
         server.sendmail(sender_email, receiver_email, msg.as_string())
@@ -139,6 +153,13 @@ IP temporarily blocked by ShieldNet.
         print("📧 Alert Email Sent Successfully")
     except Exception as e:
         print("Email Error:", e)
+
+
+def send_alert(ip):
+    """Fire-and-forget: dispatches the email in a background thread so
+    the request that triggered a block never waits on (or can be crashed
+    by) the SMTP call."""
+    threading.Thread(target=_send_alert_email, args=(ip,), daemon=True).start()
 
 
 def detect(ip, request_count):
@@ -186,6 +207,10 @@ def record_ip_sample(ip, count):
         ip_history[ip] = ip_history[ip][-SPARKLINE_MAX_POINTS:]
 
 
+from collections import deque
+debug_request_log = deque(maxlen=30)
+
+
 def get_client_ip():
     """
     Identify the client IP. Checks X-Forwarded-For first so tools like
@@ -193,9 +218,29 @@ def get_client_ip():
     a real app behind a proxy/load balancer would read client IPs).
     """
     forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.remote_addr
+    remote = request.remote_addr
+    resolved = forwarded.split(",")[0].strip() if forwarded else remote
+
+    debug_request_log.append({
+        "time": time.strftime("%H:%M:%S"),
+        "raw_x_forwarded_for": forwarded,
+        "remote_addr": remote,
+        "resolved_ip": resolved,
+        "path": request.path,
+    })
+
+    return resolved
+
+
+@app.route('/debug/requests')
+@login_required
+def debug_requests():
+    """Temporary diagnostic endpoint: shows the last 30 requests' raw
+    X-Forwarded-For header, Flask's remote_addr, and the IP ShieldNet
+    resolved and used for detection. Used to verify whether a hosting
+    platform's edge/proxy is altering the X-Forwarded-For header before
+    it reaches the app."""
+    return jsonify(list(debug_request_log))
 
 
 def get_severity(request_count, ip):
