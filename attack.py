@@ -1,16 +1,4 @@
-"""
-ShieldNet Attack Simulator
----------------------------
-Simulates DDoS-style traffic against your local ShieldNet server for testing.
 
-Usage (interactive):
-    python attack.py
-
-Usage (non-interactive, with arguments):
-    python attack.py --preset heavy
-    python attack.py --ips 5 --requests 30 --delay 0.05
-    python attack.py --target http://127.0.0.1:5000/track
-"""
 
 import requests
 import time
@@ -61,10 +49,10 @@ def random_ip():
     return f"192.168.1.{random.randint(2, 250)}"
 
 
-def run_attacker(target, ip, num_requests, delay, verbose=True):
+def run_attacker(target, ip, num_requests, delay, verbose=True, timeout=20):
     for i in range(num_requests):
         try:
-            response = requests.get(target, headers={"X-Forwarded-For": ip}, timeout=5)
+            response = requests.get(target, headers={"X-Forwarded-For": ip}, timeout=timeout)
             if verbose:
                 print(f"[{ip}] Request {i + 1}/{num_requests}: {response.text.strip()}")
         except requests.exceptions.RequestException as e:
@@ -144,6 +132,11 @@ def parse_args():
         "--quiet", action="store_true",
         help="Suppress per-request output, only print a summary"
     )
+    parser.add_argument(
+        "--timeout", type=int, default=20,
+        help="Per-request timeout in seconds (default: 20). Increase this for hosted "
+             "deployments where cold starts / network latency can exceed the default."
+    )
     return parser.parse_args()
 
 
@@ -172,7 +165,7 @@ def main():
     for config in attackers:
         t = threading.Thread(
             target=run_attacker,
-            args=(args.target, config["ip"], config["requests"], config["delay"], not args.quiet)
+            args=(args.target, config["ip"], config["requests"], config["delay"], not args.quiet, args.timeout)
         )
         threads.append(t)
         t.start()

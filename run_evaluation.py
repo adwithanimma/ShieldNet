@@ -1,20 +1,4 @@
-"""
-ShieldNet Evaluation Script
-----------------------------
-Runs each built-in attack preset against a live ShieldNet server (with a
-clean state each time via /reset), then reports how well the detector
-performed: which IPs were correctly/incorrectly blocked, and how many
-requests each IP sent before being blocked (if at all).
 
-Ground truth definition used here (simple, for the report's methodology
-section): an IP is a "true attacker" if its configured request count
-exceeds REQUEST_LIMIT (20); otherwise it's "benign" traffic that should
-NOT be blocked.
-
-Usage:
-    python run_evaluation.py
-    python run_evaluation.py --presets heavy mixed
-"""
 
 import requests
 import time
@@ -31,9 +15,6 @@ BLOCKED_URL = f"{TARGET_BASE}/blocked"
 HISTORY_URL = f"{TARGET_BASE}/history"
 LOGIN_URL = f"{TARGET_BASE}/login"
 
-# Credentials for endpoints protected by login_required (reset/blocked/history).
-# Reads from the same .env used by app.py, or falls back to the printed
-# default - override with SHIELDNET_ADMIN_USERNAME / SHIELDNET_ADMIN_PASSWORD.
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -43,13 +24,10 @@ except ImportError:
 ADMIN_USERNAME = os.environ.get("SHIELDNET_ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.environ.get("SHIELDNET_ADMIN_PASSWORD", "shieldnet")
 
-# A single session is reused across all requests so the login cookie persists.
 session = requests.Session()
 
-REQUEST_LIMIT = 20  # must match app.py's REQUEST_LIMIT for ground-truth labeling
+REQUEST_LIMIT = 20  
 
-# Same preset shapes as attack.py, duplicated here to keep this script
-# self-contained and independently runnable for grading purposes.
 PRESETS = {
     "light": [
         {"requests": 5, "delay": 1.0},

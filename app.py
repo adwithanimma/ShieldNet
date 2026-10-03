@@ -11,25 +11,18 @@ import time
 import os
 import statistics
 import secrets
-
-# Load .env file if python-dotenv is installed (optional but recommended)
+                                                                         
 try:
     from dotenv import load_dotenv
     load_dotenv()
 except ImportError:
     pass
 
-app = Flask(__name__)
-
-# Secret key for signing session cookies. Set SHIELDNET_SECRET_KEY in .env
-# for a stable value across restarts; otherwise a random one is generated
-# each time the server starts (which will log everyone out on restart).
-app.secret_key = os.environ.get("SHIELDNET_SECRET_KEY", secrets.token_hex(32))
-
-# Admin credentials for the dashboard/admin endpoints.
+app = Flask(__name__)                                                                                                                                                                                                                          
+app.secret_key = os.environ.get("SHIELDNET_SECRET_KEY", secrets.token_hex(32))                                                      
 ADMIN_USERNAME = os.environ.get("SHIELDNET_ADMIN_USERNAME", "admin")
-# Password is stored as a hash, either supplied directly via env or derived
-# from a plaintext env password on first run (see below).
+                                                                           
+                                                         
 _admin_password_hash_env = os.environ.get("SHIELDNET_ADMIN_PASSWORD_HASH")
 _admin_password_plain = os.environ.get("SHIELDNET_ADMIN_PASSWORD")
 
@@ -38,8 +31,8 @@ if _admin_password_hash_env:
 elif _admin_password_plain:
     ADMIN_PASSWORD_HASH = generate_password_hash(_admin_password_plain)
 else:
-    # No credentials configured at all - fall back to a default so the app
-    # still runs, but this should always be overridden via .env in practice.
+                                                                          
+                                                                            
     ADMIN_PASSWORD_HASH = generate_password_hash("shieldnet")
     print("⚠️  No SHIELDNET_ADMIN_PASSWORD set in .env — using default password "
           "'shieldnet'. Set SHIELDNET_ADMIN_USERNAME / SHIELDNET_ADMIN_PASSWORD "
@@ -57,67 +50,31 @@ def login_required(view_func):
             return redirect(url_for("login", next=request.path))
         return view_func(*args, **kwargs)
     return wrapped
-
-
-# Store requests (raw timestamps, used for the 10s sliding window)
-request_log = defaultdict(list)
-
-# Per-IP time series for sparklines: list of (timestamp, request_count) samples
-ip_history = defaultdict(list)
-
-# Per-IP history of past window counts, used to compute a rolling baseline
-# (mean/stddev) for the z-score / adaptive detection method.
+                                                                  
+request_log = defaultdict(list)                                                                               
+ip_history = defaultdict(list)                                                                                                                                    
 ip_baseline = defaultdict(list)
-
-# Store blocked IPs -> unblock timestamp
-blocked_ips = {}
-
-# Store attack history
-attack_history = []
-
-# IPs that are never blocked or flagged, regardless of traffic volume
+                                        
+blocked_ips = {}                      
+attack_history = []                                                                     
 whitelisted_ips = set()
-
-# Settings
-REQUEST_LIMIT = int(os.environ.get("REQUEST_LIMIT", "20"))  # fixed-threshold method
-SUSPICIOUS_LIMIT = int(REQUEST_LIMIT * 0.6)     # 60% of block threshold
-BLOCK_TIME = 30
-
-# How many seconds of request history count toward the sliding-window
-# request count. Over a real network (vs. localhost), request latency
-# spreads an attacker's requests out over more wall-clock time, so a
-# short window can under-count and miss attacks that would trigger
-# locally. Widen this via the env var for higher-latency deployments
-# without changing code.
+          
+REQUEST_LIMIT = int(os.environ.get("REQUEST_LIMIT", "20"))                          
+SUSPICIOUS_LIMIT = int(REQUEST_LIMIT * 0.6)                             
+BLOCK_TIME = 30                                                                                                                                                                                                                                                                                                                                                    
+                        
 DETECTION_WINDOW_SECONDS = int(os.environ.get("DETECTION_WINDOW_SECONDS", "10"))
 SPARKLINE_MAX_POINTS = 30
-BASELINE_MAX_SAMPLES = 50                       # how many past windows to remember per IP
-Z_SCORE_THRESHOLD = 3.0                         # how many std devs above baseline counts as an attack
-
-# The real website ShieldNet is protecting. Requests to /protected/... are
-# checked against the detection engine BEFORE being forwarded here - if an
-# IP is flagged, the demo site never sees the request at all. This points
-# to a separately deployed/running service (see demo_site/app.py).
+BASELINE_MAX_SAMPLES = 50                                                                 
+Z_SCORE_THRESHOLD = 3.0                                                                                                                                                                                                                                                                                                                                                                              
 DEMO_SITE_URL = os.environ.get("DEMO_SITE_URL", "http://127.0.0.1:6060")
-
-# Create logs folder
+                    
 os.makedirs("logs", exist_ok=True)
-
-# How long to wait for the SMTP connection/handshake before giving up.
-# Without this, a blocked or slow outbound SMTP connection (common on some
-# hosting platforms that restrict port 587) can hang indefinitely. Since
-# gunicorn kills workers that don't respond within its own timeout, an
-# email call hanging past that limit crashes the whole worker process -
-# wiping all in-memory detection state (blocked IPs, attack history) at
-# the exact moment an attack was just recorded. A short timeout here turns
-# that into a normal, catchable error instead of a worker crash.
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      
 SMTP_TIMEOUT_SECONDS = int(os.environ.get("SMTP_TIMEOUT_SECONDS", "8"))
 
-
 def _send_alert_email(ip):
-    """The actual blocking SMTP work, run in a background thread by
-    send_alert() so it can never stall or crash the request-handling
-    process, even if it's slower than expected."""
+    
     sender_email = os.environ.get("SHIELDNET_EMAIL")
     app_password = os.environ.get("SHIELDNET_APP_PASSWORD")
     receiver_email = os.environ.get("SHIELDNET_RECEIVER_EMAIL", sender_email)
@@ -156,23 +113,12 @@ IP temporarily blocked by ShieldNet.
 
 
 def send_alert(ip):
-    """Fire-and-forget: dispatches the email in a background thread so
-    the request that triggered a block never waits on (or can be crashed
-    by) the SMTP call."""
+    
     threading.Thread(target=_send_alert_email, args=(ip,), daemon=True).start()
 
 
 def detect(ip, request_count):
-    """
-    Run both detection methods and return their results so they can be
-    compared (used by the evaluation script) as well as combined for the
-    actual blocking decision.
-
-    fixed_flag:    simple static-threshold method (original approach)
-    zscore_flag:   adaptive method - flags traffic that is an unusual spike
-                   relative to that IP's own recent history, rather than a
-                   single hardcoded number for everyone
-    """
+    
     history = ip_baseline[ip]
 
     fixed_flag = request_count > REQUEST_LIMIT
@@ -183,15 +129,12 @@ def detect(ip, request_count):
         if baseline_std > 0:
             z_score = (request_count - baseline_mean) / baseline_std
             zscore_flag = z_score > Z_SCORE_THRESHOLD
-        else:
-            # No variance yet (e.g. flat baseline) - fall back to a
-            # multiple-of-baseline check so a sudden jump still triggers.
+        else:                                                                                                                                            
             zscore_flag = baseline_mean > 0 and request_count > baseline_mean * 3
-    else:
-        # Not enough history yet to compute a meaningful baseline.
+    else:                                                                  
         zscore_flag = False
 
-    # Record this sample for future baseline calculations.
+                                                          
     history.append(request_count)
     if len(history) > BASELINE_MAX_SAMPLES:
         ip_baseline[ip] = history[-BASELINE_MAX_SAMPLES:]
@@ -210,13 +153,8 @@ def record_ip_sample(ip, count):
 from collections import deque
 debug_request_log = deque(maxlen=30)
 
-
 def get_client_ip():
-    """
-    Identify the client IP. Checks X-Forwarded-For first so tools like
-    attack.py can simulate distinct attacker IPs locally (this mirrors how
-    a real app behind a proxy/load balancer would read client IPs).
-    """
+    
     forwarded = request.headers.get("X-Forwarded-For")
     remote = request.remote_addr
     resolved = forwarded.split(",")[0].strip() if forwarded else remote
@@ -231,15 +169,10 @@ def get_client_ip():
 
     return resolved
 
-
 @app.route('/debug/requests')
 @login_required
 def debug_requests():
-    """Temporary diagnostic endpoint: shows the last 30 requests' raw
-    X-Forwarded-For header, Flask's remote_addr, and the IP ShieldNet
-    resolved and used for detection. Used to verify whether a hosting
-    platform's edge/proxy is altering the X-Forwarded-For header before
-    it reaches the app."""
+    
     return jsonify(list(debug_request_log))
 
 
@@ -251,11 +184,7 @@ def get_severity(request_count, ip):
     if request_count > SUSPICIOUS_LIMIT:
         return "suspicious"
     return "secure"
-
-
-# ==========================
-# Authentication
-# ==========================
+                                                                        
 @app.route('/login', methods=["GET", "POST"])
 def login():
     error = None
@@ -278,11 +207,7 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for("login"))
-
-
-# ==========================
-# Dashboard Page
-# ==========================
+                                                                        
 @app.route('/')
 @login_required
 def dashboard():
@@ -290,15 +215,7 @@ def dashboard():
 
 
 def evaluate_request(ip):
-    """
-    Runs the full detection pipeline for a single request from `ip`:
-    whitelist check, block check, sliding-window counting, and combined
-    fixed+rolling-baseline detection. Used by both /track (the original
-    synthetic traffic endpoint) and the /protected proxy (real requests
-    being forwarded to the demo site).
-
-    Returns a tuple: (allowed: bool, status_message: str)
-    """
+    
     current_time = time.time()
 
     if ip in whitelisted_ips:
@@ -343,11 +260,7 @@ def evaluate_request(ip):
         return False, "newly_blocked"
 
     return True, "ok"
-
-
-# ==========================
-# Traffic Monitoring Route
-# ==========================
+                                                                                  
 @app.route('/track')
 def track():
     ip = get_client_ip()
@@ -362,16 +275,7 @@ def track():
         return "ShieldNet Server Running (whitelisted)"
 
     return "ShieldNet Server Running"
-
-
-# ==========================
-# Protected Site Reverse Proxy
-# ==========================
-# Every request here is evaluated by ShieldNet's detection engine BEFORE
-# being forwarded to the real site (DEMO_SITE_URL). If the requesting IP
-# is blocked or newly flagged, the demo site never receives the request -
-# ShieldNet returns a block page directly instead.
-
+                                                                                                                                                                                                                                                                                                                                                                 
 HOP_BY_HOP_HEADERS = {
     "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
     "te", "trailers", "transfer-encoding", "upgrade", "content-length", "content-encoding"
@@ -397,14 +301,9 @@ def protected_proxy(path):
             mimetype="text/html"
         )
 
-    # Request passed detection - forward it to the real (demo) site
+                                                                   
     target_url = f"{DEMO_SITE_URL}/{path}"
-
-    # Forward the browser's headers, but override Accept-Encoding: browsers
-    # send "br" (Brotli) which Python's requests library can silently fail
-    # to auto-decompress unless the optional brotli package is installed -
-    # that produces garbled/binary-looking text in the response. Restricting
-    # to gzip/deflate (which requests always handles) avoids this entirely.
+                                                                                                                                                                                                                                                                                                                                                                                      
     forwarded_headers = {k: v for k, v in request.headers if k.lower() != "host"}
     forwarded_headers["Accept-Encoding"] = "gzip, deflate"
 
@@ -432,11 +331,7 @@ def protected_proxy(path):
         if k.lower() not in HOP_BY_HOP_HEADERS
     ]
     return Response(upstream.content, status=upstream.status_code, headers=response_headers)
-
-
-# ==========================
-# Dashboard Statistics API
-# ==========================
+                          
 @app.route('/stats')
 @login_required
 def stats():
@@ -473,11 +368,7 @@ def stats():
         "bytes_sent": network.bytes_sent,
         "bytes_recv": network.bytes_recv
     })
-
-
-# ==========================
-# Attack History API (filterable)
-# ==========================
+                                                                                         
 @app.route('/history')
 @login_required
 def history():
@@ -489,10 +380,7 @@ def history():
 
     return jsonify(results)
 
-
-# ==========================
-# Blocked IPs Management
-# ==========================
+                                                                                
 @app.route('/blocked')
 @login_required
 def blocked():
@@ -515,22 +403,17 @@ def unblock(ip):
         del blocked_ips[ip]
         return jsonify({"status": "ok", "message": f"{ip} unblocked"})
     return jsonify({"status": "not_found", "message": f"{ip} was not blocked"}), 404
-
-
-# ==========================
-# Whitelist Management
-# ==========================
+                                                                              
 @app.route('/whitelist')
 @login_required
 def get_whitelist():
     return jsonify(sorted(whitelisted_ips))
 
-
 @app.route('/whitelist/add/<ip>', methods=["POST"])
 @login_required
 def whitelist_add(ip):
     whitelisted_ips.add(ip)
-    # A whitelisted IP shouldn't stay blocked
+                                             
     if ip in blocked_ips:
         del blocked_ips[ip]
     return jsonify({"status": "ok", "message": f"{ip} added to whitelist"})
@@ -542,29 +425,17 @@ def whitelist_remove(ip):
     whitelisted_ips.discard(ip)
     return jsonify({"status": "ok", "message": f"{ip} removed from whitelist"})
 
-
-# ==========================
-# Reset (for testing / evaluation runs only)
-# ==========================
+                                                                                                    
 @app.route('/reset', methods=["POST"])
 @login_required
 def reset():
-    """
-    Clears all traffic state so a fresh test scenario (e.g. an evaluation
-    preset) can be run without previous requests skewing the results.
-    Does NOT clear the whitelist, since that's meant to be a persistent
-    operator setting rather than test-run state.
-    """
+    
     request_log.clear()
     ip_history.clear()
     ip_baseline.clear()
     blocked_ips.clear()
     attack_history.clear()
     return jsonify({"status": "ok", "message": "State reset"})
-
-
-# ==========================
-# Run Flask
-# ==========================
+                                         
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5000, debug=False)
